@@ -66,3 +66,23 @@ func TestFoo(t *testing.T) {
   }
 }
 ```
+
+## Usage
+
+```$ ifacegen -h
+Usage of ifacegen:
+  -i string
+    	interface name, {import path}.{interface}, e.g. net/http.Handler; required
+  -o string
+    	name of output file, default to os.Stdout
+  -p string
+    	package name of the mock struct
+  -r string
+    	name of receiver, default to *{Interface}{Gen|Mock}
+```
+
+where,
+- `{import path}` is the package path in code, e.g. `net/http`, `golang.org/x/crypto/nacl/box`. Ifacegen handles vendor.
+- if you want the receiver to be point receiver, prefix the name with `*`, e.g. `-r '*MyHandler'`. The default receiver is point receiver.
+- if `-p` is specified, the mock struct is generated; otherwise code snippet is generated.
+
