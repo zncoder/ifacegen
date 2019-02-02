@@ -40,34 +40,34 @@ func main() {
 		Receiver:  receiver,
 	}
 
-	pkgQual, pkgName := qualifyPackage(mockInTest)
+	thisPkg := newThisPackage(mockInTest)
 	if mock {
-		iface.PkgName = pkgName
+		iface.PkgName = thisPkg.Name()
 	}
 
-	iface.Methods = parseMethods(pkgQual, srcPath, ifaceName)
+	iface.Methods = parseMethods(thisPkg, srcPath, ifaceName)
 
 	b := genCode(&iface)
 	writeCode(output, b)
 }
 
-func qualifyPackage(mockInTest bool) (types.Qualifier, string) {
+func newThisPackage(mockInTest bool) *types.Package {
 	pkg := importPackage("")
 	log.Printf("this pkg: name:%s,dir:%s,path:%s", pkg.Name, pkg.Dir, pkg.ImportPath)
-	name := pkg.Name
 	if mockInTest {
-		name += "_test"
+		pkg.Name += "_test"
 	}
+	return types.NewPackage(pkg.ImportPath, pkg.Name)
+}
 
-	tpkg := types.NewPackage(pkg.ImportPath, name)
-	q := func(pkg *types.Package) string {
-		log.Printf("thispkg.path:%s pkg.path:%s", tpkg.Path(), pkg.Path())
-		if pkg.Path() == tpkg.Path() || pkg.Name() == name {
+func newPackageQualifier(thisPkg *types.Package) types.Qualifier {
+	return func(pkg *types.Package) string {
+		log.Printf("thispkg.path:%s pkg.path:%s", thisPkg.Path(), pkg.Path())
+		if pkg.Path() == thisPkg.Path() || pkg.Name() == thisPkg.Name() {
 			return ""
 		}
 		return pkg.Name()
 	}
-	return q, name
 }
 
 func parseFlag() (receiver, output, srcPath, ifaceName string, mock, mockInTest bool) {
@@ -164,7 +164,7 @@ func importPackage(srcPath string) *build.Package {
 	return pkg
 }
 
-func parseMethods(pkgQual types.Qualifier, srcPath, ifaceName string) []*Method {
+func parseMethods(thisPkg *types.Package, srcPath, ifaceName string) []*Method {
 	pkg := importPackage(srcPath)
 
 	var srcFiles []string
@@ -176,7 +176,7 @@ func parseMethods(pkgQual types.Qualifier, srcPath, ifaceName string) []*Method 
 
 	var methods []*Method
 	for i := 0; i < iface.NumMethods(); i++ {
-		methods = append(methods, parseMethod(pkgQual, iface.Method(i)))
+		methods = append(methods, parseMethod(thisPkg, iface.Method(i)))
 	}
 	return methods
 }
@@ -207,7 +207,8 @@ func findInterface(info *types.Info, name string) *types.Interface {
 	return nil
 }
 
-func parseTuple(pkgQual types.Qualifier, tuple *types.Tuple, namePrefix string) (params, args string) {
+func parseTuple(thisPkg *types.Package, tuple *types.Tuple, namePrefix string) (params, args string) {
+	pkgQual := newPackageQualifier(thisPkg)
 	var errNameUsed bool
 	for i := 0; i < tuple.Len(); i++ {
 		v := tuple.At(i)
@@ -232,11 +233,12 @@ func parseTuple(pkgQual types.Qualifier, tuple *types.Tuple, namePrefix string) 
 	return params, args
 }
 
-func parseMethod(pkgQual types.Qualifier, fn *types.Func) *Method {
+func parseMethod(thisPkg *types.Package, fn *types.Func) *Method {
+	pkgQual := newPackageQualifier(thisPkg)
 	sig := fn.Type().(*types.Signature)
 
-	params, args := parseTuple(pkgQual, sig.Params(), "a")
-	results, resvar := parseTuple(pkgQual, sig.Results(), "r")
+	params, args := parseTuple(thisPkg, sig.Params(), "a")
+	results, resvar := parseTuple(thisPkg, sig.Results(), "r")
 
 	return &Method{
 		Method:     fn.Name(),
