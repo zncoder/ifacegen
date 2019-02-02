@@ -29,9 +29,6 @@ import (
 	"golang.org/x/tools/imports"
 )
 
-// TODO:
-// - handle interface that is in vendor
-
 func main() {
 	receiver, output, srcPath, ifaceName, mock, mockInTest := parseFlag()
 
@@ -52,8 +49,7 @@ func main() {
 }
 
 func newThisPackage(mockInTest bool) *types.Package {
-	pkg := importPackage("")
-	log.Printf("this pkg: name:%s,dir:%s,path:%s", pkg.Name, pkg.Dir, pkg.ImportPath)
+	pkg := importPackage("", "")
 	if mockInTest {
 		pkg.Name += "_test"
 	}
@@ -62,7 +58,6 @@ func newThisPackage(mockInTest bool) *types.Package {
 
 func newPackageQualifier(thisPkg *types.Package) types.Qualifier {
 	return func(pkg *types.Package) string {
-		log.Printf("thispkg.path:%s pkg.path:%s", thisPkg.Path(), pkg.Path())
 		if pkg.Path() == thisPkg.Path() || pkg.Name() == thisPkg.Name() {
 			return ""
 		}
@@ -84,6 +79,10 @@ func parseFlag() (receiver, output, srcPath, ifaceName string, mock, mockInTest 
 
 	i := strings.LastIndex(ifaceName, ".")
 	if i >= 0 {
+		j := strings.LastIndex(ifaceName, "/")
+		if j >= i {
+			log.Fatalf("malformed ifacename:%q, '.' before '/'", ifaceName)
+		}
 		srcPath = ifaceName[:i]
 		ifaceName = ifaceName[i+1:]
 	}
@@ -147,25 +146,35 @@ type Interface struct {
 	Methods   []*Method
 }
 
-func importPackage(srcPath string) *build.Package {
+func importPackage(vendorPrefix, srcPath string) *build.Package {
 	// package is e.g. "net/http" if it is in GOROOT or GOPATH,
 	// package is e.g. "github.com/foo/bar/vendor/golang.org/x/tools/imports" if it is a vendor package.
-	var pkg *build.Package
-	var err error
-	if srcPath != "" {
-		pkg, err = build.Import(srcPath, "", 0)
-		fatalOnErr(err, "import pkg:%s", srcPath)
-	} else {
-		wd, ee := os.Getwd()
-		fatalOnErr(ee, "getwd")
-		pkg, err = build.ImportDir(wd, 0)
+	if srcPath == "" {
+		wd, err := os.Getwd()
+		fatalOnErr(err, "getwd")
+		pkg, err := build.ImportDir(wd, 0)
 		fatalOnErr(err, "importdir wd:%q", wd)
+		return pkg
 	}
-	return pkg
+
+	for {
+		p := srcPath
+		if vendorPrefix != "" && vendorPrefix != "." {
+			p = filepath.Join(vendorPrefix, "vendor", srcPath)
+		}
+		pkg, err := build.Import(p, "", 0)
+		if err == nil {
+			return pkg
+		}
+		if vendorPrefix == "" || vendorPrefix == "." {
+			fatalOnErr(err, "import pkg:%s", srcPath)
+		}
+		vendorPrefix = filepath.Dir(vendorPrefix)
+	}
 }
 
 func parseMethods(thisPkg *types.Package, srcPath, ifaceName string) []*Method {
-	pkg := importPackage(srcPath)
+	pkg := importPackage(thisPkg.Path(), srcPath)
 
 	var srcFiles []string
 	for _, fn := range pkg.GoFiles {
@@ -273,8 +282,7 @@ const (
 )
 
 type {{$x.Struct}} struct {
-  T *testing.T
-  FailIfNotSet bool
+  PanicIfNotMocked bool
 
   {{range $x.Methods}}
   {{.Method}}Mock {{.Sig}}{{end}}
@@ -285,8 +293,8 @@ type {{$x.Struct}} struct {
 func (m {{$x.Receiver}}) {{.Method}}({{.Params}}) ({{.Results}}) {
   atomic.AddInt32(&m.callCounts[call{{.Method}}], 1)
   if m.{{.Method}}Mock == nil {
-    if m.FailIfNotSet {
-      m.T.Error("{{.Method}} is not mocked")
+    if m.PanicIfNotMocked {
+      panic("{{.Method}} is not mocked")
     }
     return {{.ResultVars}}
   }
