@@ -108,9 +108,7 @@ func genCode(iface *Interface) []byte {
 
 	var buf bytes.Buffer
 	err := tpl.Execute(&buf, iface)
-	if err != nil {
-		log.Fatalf("execute template:%s err:%v", tpl.Name(), err)
-	}
+	fatalOnErr(err, "execute template:%s", tpl.Name())
 	gen := buf.Bytes()
 
 	if iface.PkgName == "" {
@@ -118,21 +116,17 @@ func genCode(iface *Interface) []byte {
 	} else {
 		gen, err = imports.Process("", gen, nil)
 	}
-	if err != nil {
-		log.Fatalf("format/imports err:%v of code\n`%s`", err, buf.Bytes())
-	}
+	fatalOnErr(err, "format/imports of code\n`%s`", buf.Bytes())
 	return gen
 }
 
 func writeCode(fn string, b []byte) {
 	if fn != "" {
-		if err := ioutil.WriteFile(fn, b, 0600); err != nil {
-			log.Fatalf("write file:%q err:%v", fn, err)
-		}
+		err := ioutil.WriteFile(fn, b, 0600)
+		fatalOnErr(err, "write code to file:%q", fn)
 	} else {
-		if _, err := os.Stdout.Write(b); err != nil {
-			log.Fatalf("write err:%v", err)
-		}
+		_, err := os.Stdout.Write(b)
+		fatalOnErr(err, "write code to stdout")
 	}
 }
 
@@ -196,9 +190,7 @@ func parseTypeInfo(srcFiles []string) *types.Info {
 	conf.TypeCheckFuncBodies = func(path string) bool { return false }
 
 	prog, err := conf.Load()
-	if err != nil {
-		log.Fatalf("load err:%v", err)
-	}
+	fatalOnErr(err, "load")
 	return &prog.Created[0].Info
 }
 
