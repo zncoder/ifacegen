@@ -66,11 +66,11 @@ func newPackageQualifier(thisPkg *types.Package) types.Qualifier {
 }
 
 func parseFlag() (receiver, output, srcPath, ifaceName string, mock, mockInTest bool) {
-	flag.StringVar(&receiver, "r", "", "name of receiver, default to *{Interface}{Gen|Mock}")
-	flag.StringVar(&output, "o", "", "name of output file, default to os.Stdout")
-	flag.StringVar(&ifaceName, "i", "", "interface name, [{import path}.]{interface}, e.g. net/http.Handler, Foo; required")
-	flag.BoolVar(&mock, "m", false, "true to generate mock struct")
-	flag.BoolVar(&mockInTest, "t", false, "true to put the mock struct in test package")
+	flag.StringVar(&receiver, "r", "", "Name of receiver, default to *{Interface}{Gen|Mock}")
+	flag.StringVar(&output, "o", "", "Name of output file, default to os.Stdout")
+	flag.StringVar(&ifaceName, "i", "", "Interface name, [{import_path}.]{Interface}, e.g. net/http.Handler, Foo. (Required)")
+	flag.BoolVar(&mock, "m", false, "Generate mock struct if true")
+	flag.BoolVar(&mockInTest, "t", false, "Put the mock struct in test package if true")
 	flag.Parse()
 	if ifaceName == "" {
 		fmt.Fprintln(os.Stderr, "interface name is required")
