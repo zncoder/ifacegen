@@ -3,6 +3,13 @@ Ifacegen generates skeleton code of a type to satisfy an interface. It
 can be used to generate snippet that satisfies an interface, such as
 `sort.Interface`, or generate mock struct in tests.
 
+Ifacegen is intuitive to use. The interface is specified as
+`{package_import_path}.{interface_name}`,
+e.g. `google.golang.org/grpc.Compressor`. The package can be a
+vendored one, in `GOPATH` or `GOROOT`. `{package import path}.` is
+optional. If no `{package import path}.` is specified, the
+`{interface_name}` is looked up in the local package.
+
 Different from other mock tools, such as gomock, ifacegen takes a
 minimalistic approach. Ifacegen does not introduce any DSL, and tries
 to generate code that is like manually written by developer.
@@ -11,13 +18,6 @@ Ifacegen generates the method stubs of a struct to satisfy the
 interface, but leave the actual code to mock the methods to
 developer. It is up to developer to decide how to verify the input
 and/or return the output.
-
-Ifacegen is intuitive to use. The interface is specified as
-`{package_import_path}.{interface_name}`,
-e.g. `google.golang.org/grpc.Compressor`. The package can be a
-vendored one, in `GOPATH` or `GOROOT`. `{package import path}.` is
-optional. If no `{package import path}.` is specified, the
-`{interface_name}` is looked up in the local package.
 
 ## Code Snippet
 You can use `ifacegen` to generate method stubs of an interface.
