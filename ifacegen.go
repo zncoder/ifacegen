@@ -17,13 +17,13 @@ import (
 	"go/build"
 	"go/format"
 	"go/types"
-	"html/template"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/imports"
@@ -131,10 +131,9 @@ func writeCode(fn string, b []byte) {
 
 type Method struct {
 	Method     string
-	Sig        string
-	Params     string
-	Args       string
-	Results    string
+	Sig        string // func(a string)
+	FuncSig    string // Foo(a string)
+	ArgVars    string
 	ResultVars string
 }
 
@@ -216,46 +215,50 @@ func findInterface(info *types.Info, name string) *types.Interface {
 	return nil
 }
 
-func parseTuple(thisPkg *types.Package, tuple *types.Tuple, namePrefix string) (params, args string) {
-	pkgQual := newPackageQualifier(thisPkg)
+func setVarNames(tuple *types.Tuple, namePrefix string) (_ *types.Tuple, varNames string, set bool) {
+	var vars []*types.Var
 	var errNameUsed bool
 	for i := 0; i < tuple.Len(); i++ {
 		v := tuple.At(i)
 		name := v.Name()
-		ty := types.TypeString(v.Type(), pkgQual)
-
-		if name == "" && namePrefix != "" {
-			if ty == "error" && !errNameUsed {
+		if name == "" || name == "_" {
+			if types.TypeString(v.Type(), nil) == "error" && !errNameUsed {
 				errNameUsed = true
 				name = "err"
 			} else {
 				name = namePrefix + strconv.Itoa(i)
 			}
+			v = types.NewVar(v.Pos(), v.Pkg(), name, v.Type())
+			set = true
 		}
+		vars = append(vars, v)
 		if i != 0 {
-			params += ", "
-			args += ", "
+			varNames += ", "
 		}
-		params += name + " " + ty
-		args += name
+		varNames += name
 	}
-	return params, args
+	return types.NewTuple(vars...), varNames, set
 }
 
 func parseMethod(thisPkg *types.Package, fn *types.Func) *Method {
 	pkgQual := newPackageQualifier(thisPkg)
 	sig := fn.Type().(*types.Signature)
+	origSigStr := types.TypeString(sig, pkgQual)
 
-	params, args := parseTuple(thisPkg, sig.Params(), "a")
-	results, resvar := parseTuple(thisPkg, sig.Results(), "r")
+	params, argvars, oka := setVarNames(sig.Params(), "a")
+	results, resvars, okr := setVarNames(sig.Results(), "r")
+	if oka || okr {
+		sig = types.NewSignature(sig.Recv(), params, results, sig.Variadic())
+	}
+	sigStr := types.TypeString(sig, pkgQual)
+	funcSig := fn.Name() + strings.TrimPrefix(sigStr, "func")
 
 	return &Method{
 		Method:     fn.Name(),
-		Sig:        types.TypeString(sig, pkgQual),
-		Params:     params,
-		Args:       args,
-		Results:    results,
-		ResultVars: resvar,
+		Sig:        origSigStr,
+		FuncSig:    funcSig,
+		ArgVars:    argvars,
+		ResultVars: resvars,
 	}
 }
 
@@ -266,7 +269,7 @@ func fatalOnErr(err error, format string, args ...interface{}) {
 }
 
 var genTpl = template.Must(template.New("gen").Parse(`{{with $x := .}}{{range .Methods}}
-func (m {{$x.Receiver}}) {{.Method}}({{.Params}}) ({{.Results}}) {
+func (m {{$x.Receiver}}) {{.FuncSig}} {
 }
 {{end}}
 {{end}}
@@ -290,7 +293,7 @@ type {{$x.Struct}} struct {
   callCounts [{{len $.Methods}}]int32
 }
 {{range $x.Methods}}
-func (m {{$x.Receiver}}) {{.Method}}({{.Params}}) ({{.Results}}) {
+func (m {{$x.Receiver}}) {{.FuncSig}} {
   atomic.AddInt32(&m.callCounts[call{{.Method}}], 1)
   if m.{{.Method}}Mock == nil {
     if m.PanicIfNotMocked {
@@ -298,7 +301,7 @@ func (m {{$x.Receiver}}) {{.Method}}({{.Params}}) ({{.Results}}) {
     }
     return {{.ResultVars}}
   }
-  {{if .Results}}return {{end}}m.{{.Method}}Mock({{.Args}})
+  {{if .ResultVars}}return {{end}}m.{{.Method}}Mock({{.ArgVars}})
 }
 
 func (m {{$x.Receiver}}) {{.Method}}CallCount() int {
